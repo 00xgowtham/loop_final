@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Lint, unit tests, build and release audits
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:unit
+      - run: npm run test:web
+      - run: npm run build
+      - run: npm run ui:audit
+      - run: npm run deploy:check
+      - run: npm run check:seed
+
+  integration:
+    name: API, SQL and browser tests (MySQL ${{ matrix.mysql }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        mysql: ['8.4.13', '8.0.46']
+    services:
+      mysql:
+        image: mysql:${{ matrix.mysql }}
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          MYSQL_ROOT_HOST: "%"
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping --host=127.0.0.1 --user=root --password=ci-root-password"
+          --health-interval=10s --health-timeout=5s --health-retries=12
+    env:
+      NODE_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: loop_ci
+      DB_APP_USER: loop_ci_app
+      DB_APP_PASSWORD: ci-only-app-password
+      DB_APP_HOST: "%"
+      DB_OWNER_USER: root
+      DB_OWNER_PASSWORD: ci-root-password
+      DB_TIMEZONE: "+05:30"
+      SESSION_SECRET: ci-only-session-secret-at-least-32-characters
+      JOBS_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Allow stored routines with binary logging
+        run: mysql -h 127.0.0.1 -uroot -pci-root-password -e "SET GLOBAL log_bin_trust_function_creators = 1;"
+      - name: Build a disposable test database (baseline, seed, every migration)
+        run: |
+          npm run db:seed:generate
+          npm run db:setup -- --allow-destructive
+      - name: SQL contract
+        run: npm run test:sql
+      - name: Upgrade path equals a fresh install
+        run: npm run db:verify
+      - name: API integration tests
+        run: npm test
+      - name: Build and start LOOP
+        run: |
+          npm run build
+          mkdir -p media
+          NODE_ENV=production COOKIE_SECURE=false CORS_ORIGIN=http://localhost:4000 PORT=4000 LOCAL_MEDIA_DIR=./media \
+            RATE_LIMIT_AUTH_FAILURES=1000 RATE_LIMIT_WRITES_PER_MIN=10000 nohup npm start > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://localhost:4000/api/ready && break; sleep 2; done
+      - name: Browser tests (Playwright)
+        if: matrix.mysql == '8.4.13'
+        run: |
+          python -m pip install --quiet pytest playwright
+          python -m playwright install --with-deps chromium
+          BASE_URL=http://localhost:4000 SHOTS=e2e/screenshots npm run test:e2e
+      - name: Server log
+        if: always()
+        run: tail -n 200 server.log || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always() && matrix.mysql == '8.4.13'
+        with:
+          name: e2e-screenshots
+          path: e2e/screenshots
+          if-no-files-found: ignore

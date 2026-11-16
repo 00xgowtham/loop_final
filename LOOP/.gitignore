@@ -1,0 +1,15 @@
+node_modules/
+frontend/dist/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+__pycache__/
+.pytest_cache/
+e2e/screenshots/
+media/*
+!media/README.md
+backups/
+*.sql.gz
+.vercel
