@@ -41,8 +41,8 @@ const unwanted = ['react-router-dom', 'lucide-react'].filter((n) => lock.package
 check(unwanted.length === 0, `Removed frontend dependencies are gone from the lockfile${unwanted.length ? ` (${unwanted.join(', ')})` : ''}.`);
 
 // Vercel
-check(vercel.installCommand === 'npm ci' && vercel.buildCommand === 'npm run build' && vercel.outputDirectory === 'frontend/dist',
-  'vercel.json installs with npm ci, builds the frontend and serves frontend/dist.');
+check(vercel.installCommand === 'npm ci --include=dev' && vercel.buildCommand === 'npm run build' && vercel.outputDirectory === 'frontend/dist',
+  'vercel.json installs with npm ci --include=dev (NODE_ENV=production would skip Vite), builds the frontend and serves frontend/dist.');
 const rewrites = Array.isArray(vercel.rewrites) ? vercel.rewrites : [];
 check(rewrites.some((r) => r.source === '/api/:path*' && r.destination === '/api?__loop_path=:path*')
   && rewrites.some((r) => r.source === '/(.*)' && r.destination === '/index.html'),

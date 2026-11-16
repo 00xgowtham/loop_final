@@ -6,7 +6,7 @@
 
 | Setting | Value |
 |---|---|
-| Install | `npm ci` |
+| Install | `npm ci --include=dev` (devDependencies are needed to build even with `NODE_ENV=production`) |
 | Build | `npm run build` (Vite → `frontend/dist`) |
 | Output | `frontend/dist` |
 | API | `/api/*` is rewritten to the single function `api/index.js`, which runs the Express app |

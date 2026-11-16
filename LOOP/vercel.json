@@ -3,7 +3,7 @@
   "version": 2,
   "buildCommand": "npm run build",
   "outputDirectory": "frontend/dist",
-  "installCommand": "npm ci",
+  "installCommand": "npm ci --include=dev",
   "functions": {
     "api/*.js": {
       "maxDuration": 30
